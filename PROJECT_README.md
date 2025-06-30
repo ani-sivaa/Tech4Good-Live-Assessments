@@ -6,6 +6,7 @@ An AI-powered assessment platform for conducting scalable live interviews and ev
 
 - **Offline Assessment**: Evaluate student reflection documents against customizable rubrics
 - **Live Interview**: Conduct real-time AI-powered interviews with students
+- **Google Colab Integration**: Execute custom Jupyter notebooks for advanced evaluation workflows
 - **Flexible Rubrics**: Easily swap between different evaluation criteria and workflows
 - **GenAI Integration**: Uses Google's Gemini Flash model for intelligent evaluation
 
@@ -21,11 +22,13 @@ An AI-powered assessment platform for conducting scalable live interviews and ev
 │   │   │   └── page.tsx
 ├── backend/           # Flask Python API
 │   ├── app.py         # Main Flask application
+│   ├── colab_executor.py         # Google Colab workflow execution
 │   ├── evaluation/    # Evaluation system
 │   │   ├── rubric_loader.py      # Rubric management
 │   │   ├── workflow_manager.py   # Workflow management
 │   │   ├── rubrics/              # JSON rubric definitions
 │   │   └── workflows/            # JSON workflow definitions
+│   ├── colab_workflows/          # Jupyter notebook workflows
 │   └── .env.example   # Environment variables template
 ```
 
@@ -46,7 +49,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
-pip install flask flask-cors python-dotenv google-generativeai
+pip install flask flask-cors python-dotenv google-generativeai nbformat nbconvert jupyter-client ipython
 ```
 
 4. Set up environment variables:
@@ -83,6 +86,7 @@ npm run dev
 
 ### Assessment Dashboard
 - Upload problem statements and student responses
+- Choose between standard workflows or Google Colab notebooks
 - Select evaluation rubrics and workflows
 - Get detailed AI-powered assessments with scores and feedback
 
@@ -92,6 +96,37 @@ npm run dev
 - AI asks follow-up questions to probe deeper understanding
 
 ## Customization
+
+### Adding New Colab Workflows
+
+Create a new Jupyter notebook in `backend/colab_workflows/`:
+
+1. **Create notebook**: Save as `.ipynb` file
+2. **Parameter injection**: Use variables like `student_response`, `problem_statement`, `rubric_data`, `gemini_api_key`
+3. **Output format**: Print final results as JSON for proper parsing
+4. **Example structure**:
+
+```python
+# Cell 1: Parameters (auto-injected)
+student_response = ""
+problem_statement = ""
+rubric_data = {}
+gemini_api_key = ""
+
+# Cell 2: Analysis code
+import google.generativeai as genai
+genai.configure(api_key=gemini_api_key)
+# Your custom analysis...
+
+# Final Cell: Output results
+evaluation_results = {
+    "overall_score": final_score,
+    "concept_scores": {...},
+    "workflow_type": "colab"
+}
+print("Final Evaluation Results:")
+print(json.dumps(evaluation_results, indent=2))
+```
 
 ### Adding New Rubrics
 
@@ -133,9 +168,11 @@ Create a new JSON file in `backend/evaluation/workflows/`:
 
 ## API Endpoints
 
-- `POST /api/evaluate` - Evaluate student responses
+- `POST /api/evaluate` - Evaluate student responses (standard workflows)
+- `POST /api/execute-colab` - Execute Google Colab workflow
 - `GET /api/rubrics` - List available rubrics
-- `GET /api/workflows` - List available workflows  
+- `GET /api/workflows` - List available standard workflows
+- `GET /api/colab-workflows` - List available Colab workflows
 - `POST /api/live-interview` - Conduct live interview sessions
 
 ## Requirements

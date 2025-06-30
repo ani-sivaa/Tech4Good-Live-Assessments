@@ -6,6 +6,7 @@ import google.generativeai as genai
 import json
 from evaluation.rubric_loader import RubricLoader
 from evaluation.workflow_manager import WorkflowManager
+from colab_executor import ColabWorkflowManager
 
 load_dotenv()
 
@@ -16,6 +17,7 @@ genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
 rubric_loader = RubricLoader()
 workflow_manager = WorkflowManager()
+colab_manager = ColabWorkflowManager()
 
 @app.route('/api/evaluate', methods=['POST'])
 def evaluate_student():
@@ -68,6 +70,62 @@ def get_workflows():
     try:
         workflows = workflow_manager.list_workflows()
         return jsonify(workflows)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/colab-workflows', methods=['GET'])
+def get_colab_workflows():
+    try:
+        workflows = colab_manager.list_workflows()
+        workflow_info = []
+        for workflow in workflows:
+            info = colab_manager.get_workflow_info(workflow)
+            workflow_info.append(info)
+        return jsonify(workflow_info)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/execute-colab', methods=['POST'])
+def execute_colab_workflow():
+    try:
+        data = request.json
+        
+        workflow_name = data.get('workflow_name', '')
+        student_response = data.get('student_response', '')
+        problem_statement = data.get('problem_statement', '')
+        rubric_name = data.get('rubric_name', 'genai_assessment')
+        
+        # Load rubric data
+        rubric_data = rubric_loader.load_rubric(rubric_name)
+        
+        # Prepare parameters for the notebook
+        parameters = {
+            'student_response': student_response,
+            'problem_statement': problem_statement,
+            'rubric_data': rubric_data,
+            'gemini_api_key': os.getenv('GEMINI_API_KEY')
+        }
+        
+        # Execute the Colab workflow
+        result = colab_manager.execute_workflow(workflow_name, parameters)
+        
+        if result['status'] == 'success':
+            # Extract evaluation results from notebook execution
+            evaluation_results = extract_colab_results(result['results'])
+            
+            return jsonify({
+                'status': 'success',
+                'evaluation': evaluation_results,
+                'execution_details': result['results'],
+                'workflow_name': workflow_name,
+                'rubric_name': rubric_name
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'error': result['error']
+            }), 500
+            
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -158,6 +216,38 @@ Key concepts to assess: {', '.join(key_concepts)}
 
 Ask a thoughtful follow-up question that helps assess their understanding of the remaining concepts.
 """
+
+def extract_colab_results(execution_results):
+    """Extract evaluation results from Colab notebook execution"""
+    try:
+        # Look for the final evaluation results in the last output
+        for output_group in reversed(execution_results.get('outputs', [])):
+            for output in output_group.get('outputs', []):
+                if output.get('type') == 'stream' and 'Final Evaluation Results' in output.get('text', ''):
+                    # Try to extract JSON from the output
+                    text = output.get('text', '')
+                    json_start = text.find('{')
+                    if json_start != -1:
+                        json_str = text[json_start:]
+                        try:
+                            return json.loads(json_str)
+                        except:
+                            pass
+        
+        # Fallback: construct results from individual outputs
+        return {
+            'overall_score': 'N/A',
+            'feedback': 'Colab workflow executed successfully but results format not recognized',
+            'concept_scores': {},
+            'workflow_type': 'colab'
+        }
+    except Exception as e:
+        return {
+            'overall_score': 'N/A',
+            'feedback': f'Error extracting results: {str(e)}',
+            'concept_scores': {},
+            'workflow_type': 'colab'
+        }
 
 def get_next_stage(current_stage):
     stages = ['initial', 'deep_dive', 'clarification', 'wrap_up']

@@ -21,8 +21,11 @@ interface EvaluationResult {
 export default function AssessmentDashboard() {
   const [rubrics, setRubrics] = useState<string[]>([]);
   const [workflows, setWorkflows] = useState<string[]>([]);
+  const [colabWorkflows, setColabWorkflows] = useState<any[]>([]);
   const [selectedRubric, setSelectedRubric] = useState('');
   const [selectedWorkflow, setSelectedWorkflow] = useState('');
+  const [selectedColabWorkflow, setSelectedColabWorkflow] = useState('');
+  const [workflowType, setWorkflowType] = useState<'standard' | 'colab'>('standard');
   const [problemStatement, setProblemStatement] = useState('');
   const [studentResponse, setStudentResponse] = useState('');
   const [evaluationResult, setEvaluationResult] = useState<EvaluationResult | null>(null);
@@ -57,6 +60,7 @@ I would also implement a feedback loop where poor responses are flagged for prom
   useEffect(() => {
     fetchRubrics();
     fetchWorkflows();
+    fetchColabWorkflows();
   }, []);
 
   const fetchRubrics = async () => {
@@ -85,6 +89,19 @@ I would also implement a feedback loop where poor responses are flagged for prom
     }
   };
 
+  const fetchColabWorkflows = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/colab-workflows');
+      const data = await response.json();
+      setColabWorkflows(data);
+      if (data.length > 0) setSelectedColabWorkflow(data[0].name);
+    } catch (error) {
+      console.error('Error fetching Colab workflows:', error);
+      setColabWorkflows([{name: 'genai_assessment', description: 'GenAI Assessment Workflow'}]);
+      setSelectedColabWorkflow('genai_assessment');
+    }
+  };
+
   const handleEvaluate = async () => {
     if (!problemStatement.trim() || !studentResponse.trim()) {
       alert('Please provide both problem statement and student response');
@@ -93,17 +110,26 @@ I would also implement a feedback loop where poor responses are flagged for prom
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/evaluate', {
+      let endpoint = 'http://localhost:5000/api/evaluate';
+      let requestBody: any = {
+        problem_statement: problemStatement,
+        student_response: studentResponse,
+        rubric_name: selectedRubric,
+      };
+
+      if (workflowType === 'colab') {
+        endpoint = 'http://localhost:5000/api/execute-colab';
+        requestBody.workflow_name = selectedColabWorkflow;
+      } else {
+        requestBody.workflow_name = selectedWorkflow;
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          problem_statement: problemStatement,
-          student_response: studentResponse,
-          rubric_name: selectedRubric,
-          workflow_name: selectedWorkflow,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const result = await response.json();
@@ -123,7 +149,11 @@ I would also implement a feedback loop where poor responses are flagged for prom
     setProblemStatement(sampleProblemStatement);
     setStudentResponse(sampleStudentResponse);
     setSelectedRubric('genai_assessment');
-    setSelectedWorkflow('reflection_analysis');
+    if (workflowType === 'colab') {
+      setSelectedColabWorkflow('genai_assessment');
+    } else {
+      setSelectedWorkflow('reflection_analysis');
+    }
   };
 
   return (
@@ -141,36 +171,94 @@ I would also implement a feedback loop where poor responses are flagged for prom
           </button>
         </div>
         
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Evaluation Rubric
+              Workflow Type
             </label>
-            <select
-              value={selectedRubric}
-              onChange={(e) => setSelectedRubric(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            >
-              {rubrics.map(rubric => (
-                <option key={rubric} value={rubric}>{rubric}</option>
-              ))}
-            </select>
+            <div className="flex space-x-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="standard"
+                  checked={workflowType === 'standard'}
+                  onChange={(e) => setWorkflowType(e.target.value as 'standard' | 'colab')}
+                  className="mr-2"
+                />
+                Standard Workflows
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="colab"
+                  checked={workflowType === 'colab'}
+                  onChange={(e) => setWorkflowType(e.target.value as 'standard' | 'colab')}
+                  className="mr-2"
+                />
+                Google Colab Workflows
+              </label>
+            </div>
           </div>
           
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Evaluation Workflow
-            </label>
-            <select
-              value={selectedWorkflow}
-              onChange={(e) => setSelectedWorkflow(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            >
-              {workflows.map(workflow => (
-                <option key={workflow} value={workflow}>{workflow}</option>
-              ))}
-            </select>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Evaluation Rubric
+              </label>
+              <select
+                value={selectedRubric}
+                onChange={(e) => setSelectedRubric(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                {rubrics.map(rubric => (
+                  <option key={rubric} value={rubric}>{rubric}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {workflowType === 'colab' ? 'Colab Workflow' : 'Evaluation Workflow'}
+              </label>
+              {workflowType === 'colab' ? (
+                <select
+                  value={selectedColabWorkflow}
+                  onChange={(e) => setSelectedColabWorkflow(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  {colabWorkflows.map(workflow => (
+                    <option key={workflow.name} value={workflow.name} title={workflow.description}>
+                      {workflow.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  value={selectedWorkflow}
+                  onChange={(e) => setSelectedWorkflow(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                >
+                  {workflows.map(workflow => (
+                    <option key={workflow} value={workflow}>{workflow}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
+          
+          {workflowType === 'colab' && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+              <h4 className="font-medium text-blue-900 dark:text-blue-300 mb-2">
+                Colab Workflow Features:
+              </h4>
+              <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1">
+                <li>• Execute custom Jupyter notebooks for advanced analysis</li>
+                <li>• Use complex AI models and data processing pipelines</li>
+                <li>• Leverage the full Python ecosystem for evaluation</li>
+                <li>• Generate detailed visualizations and reports</li>
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 
@@ -208,7 +296,10 @@ I would also implement a feedback loop where poor responses are flagged for prom
           disabled={loading}
           className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
-          {loading ? 'Evaluating...' : 'Evaluate Response'}
+          {loading 
+            ? (workflowType === 'colab' ? 'Executing Colab Workflow...' : 'Evaluating...') 
+            : (workflowType === 'colab' ? 'Execute Colab Analysis' : 'Evaluate Response')
+          }
         </button>
       </div>
 
